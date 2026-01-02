@@ -164,7 +164,7 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const { id, categoryId, createRule, rulePattern, ruleChannel } = body;
 
         if (!id) {

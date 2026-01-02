@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const { name, emoji = '📦' } = body;
 
         if (!name || name.trim().length === 0) {
@@ -140,7 +140,7 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const { id, name, emoji, active, sortOrder } = body;
 
         if (!id) {

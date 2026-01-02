@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const {
             transactions: rawTransactions,
             fileHash,

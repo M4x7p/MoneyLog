@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const {
             categoryId,
             pattern,
@@ -178,7 +178,7 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const { id, pattern, matchType, channel, priority, enabled } = body;
 
         if (!id) {

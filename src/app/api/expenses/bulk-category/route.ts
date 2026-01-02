@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        const body = await request.json() as any;
         const { expenseIds, categoryId, createRule, rulePattern, ruleChannel } = body;
 
         if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
