@@ -104,7 +104,7 @@ export default function ImportPage() {
                 body: formData,
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.step === 'PASSWORD_REQUIRED') {
                 setStep('password');
@@ -157,7 +157,7 @@ export default function ImportPage() {
                 }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.success) {
                 setImportResult(data.batch);
@@ -216,8 +216,8 @@ export default function ImportPage() {
                         <div key={s.id} className="flex items-center">
                             <div
                                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step === s.id || steps.findIndex(x => x.id === step) > i
-                                        ? 'bg-violet-500 text-white'
-                                        : 'bg-white/10 text-gray-500'
+                                    ? 'bg-violet-500 text-white'
+                                    : 'bg-white/10 text-gray-500'
                                     }`}
                             >
                                 {steps.findIndex(x => x.id === step) > i ? (

@@ -29,7 +29,7 @@ export default function CreateFamilyPage() {
                 body: JSON.stringify({ name }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.success) {
                 await refreshFamily();

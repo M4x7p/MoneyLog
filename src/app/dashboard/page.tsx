@@ -70,7 +70,7 @@ export default function DashboardPage() {
             if (ownerFilter) params.set('ownerId', ownerFilter);
 
             const res = await fetch(`/api/reports/summary?${params}`);
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.summary) {
                 setSummary(data.summary);

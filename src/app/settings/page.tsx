@@ -47,7 +47,7 @@ export default function SettingsPage() {
     const fetchInvite = useCallback(async () => {
         try {
             const res = await fetch('/api/family/invite');
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.invite) {
                 setInvite(data.invite);
             }
@@ -60,7 +60,7 @@ export default function SettingsPage() {
         setIsLoadingRules(true);
         try {
             const res = await fetch('/api/rules');
-            const data = await res.json();
+            const data = await res.json() as any;
             setRules(data.rules || []);
         } catch (error) {
             console.error('Failed to fetch rules:', error);
@@ -79,7 +79,7 @@ export default function SettingsPage() {
         setIsLoadingInvite(true);
         try {
             const res = await fetch('/api/family/invite', { method: 'POST' });
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.success && data.invite) {
                 setInvite(data.invite);
             }

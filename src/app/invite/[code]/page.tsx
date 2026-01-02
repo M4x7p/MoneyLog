@@ -29,7 +29,7 @@ export default function InvitePage() {
         const validateInvite = async () => {
             try {
                 const res = await fetch(`/api/family/invite/accept?code=${code}`);
-                const data = await res.json();
+                const data = await res.json() as any;
 
                 if (data.valid) {
                     setInviteInfo(data.invite);
@@ -58,7 +58,7 @@ export default function InvitePage() {
                 body: JSON.stringify({ code }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.success) {
                 setSuccess(true);

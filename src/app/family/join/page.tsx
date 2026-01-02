@@ -32,7 +32,7 @@ function JoinFamilyContent() {
                 body: JSON.stringify({ code: code.trim() }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.success) {
                 setFamilyName(data.family.name);

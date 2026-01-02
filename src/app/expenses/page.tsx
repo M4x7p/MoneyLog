@@ -87,7 +87,7 @@ function ExpensesContent() {
             if (search) params.set('search', search);
 
             const res = await fetch(`/api/expenses?${params}`);
-            const data = await res.json();
+            const data = await res.json() as any;
 
             setExpenses(data.expenses || []);
             setPagination(data.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 });
@@ -100,7 +100,7 @@ function ExpensesContent() {
     const fetchCategories = useCallback(async () => {
         try {
             const res = await fetch('/api/categories');
-            const data = await res.json();
+            const data = await res.json() as any;
             setCategories(data.categories || []);
         } catch (error) {
             console.error('Failed to fetch categories:', error);
@@ -146,7 +146,7 @@ function ExpensesContent() {
                 }),
             });
 
-            const data = await res.json();
+            const data = await res.json() as any;
 
             if (data.success) {
                 setShowCategoryModal(false);
