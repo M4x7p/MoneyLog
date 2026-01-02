@@ -7,6 +7,8 @@ import { useAuth } from '@/contexts/SessionContext';
 import { Card, Button, Spinner } from '@/components/ui';
 import { Users, Check, X, LogIn } from 'lucide-react';
 
+export const runtime = 'edge';
+
 interface InviteInfo {
     familyName: string;
     creatorName: string;

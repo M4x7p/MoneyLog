@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'edge';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, createToken, setSessionCookie } from '@/lib/auth';
 
