@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
             const res = await fetch('/api/auth/me');
             const data = await res.json() as any;
+            console.log('Auth data check:', data);
             if (data.authenticated) {
                 setUser(data.user);
             } else {
