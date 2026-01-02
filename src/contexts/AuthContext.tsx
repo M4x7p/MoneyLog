@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const refreshUser = useCallback(async () => {
         try {
             const res = await fetch('/api/auth/me');
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.authenticated) {
                 setUser(data.user);
             } else {
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const refreshFamily = useCallback(async () => {
         try {
             const res = await fetch('/api/family');
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.hasFamily) {
                 setFamily(data.family);
             } else {
@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
             });
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.success) {
                 setUser(data.user);
                 return { success: true };
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, name }),
             });
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.success) {
                 setUser(data.user);
                 return { success: true };
