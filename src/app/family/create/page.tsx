@@ -36,7 +36,7 @@ export default function CreateFamilyPage() {
                 // Generate invite link
                 const inviteRes = await fetch('/api/family/invite', { method: 'POST' });
                 const inviteData: any = await inviteRes.json();
-                console.log('Invite result:', inviteData);
+                console.log('Invite result (v2):', inviteData);
 
                 if (inviteData.success) {
                     setInviteCode(inviteData.invite.code);
