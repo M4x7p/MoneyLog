@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SessionContext';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Card, Button, Input, Select, Spinner, Badge } from '@/components/ui';
 import {

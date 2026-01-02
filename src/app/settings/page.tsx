@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SessionContext';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Card, Button, Input, Badge, Spinner } from '@/components/ui';
 import {

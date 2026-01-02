@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SessionContext';
 import { Button, Input, Card } from '@/components/ui';
 import { Users, Link as LinkIcon, Check } from 'lucide-react';
 import { Suspense } from 'react';

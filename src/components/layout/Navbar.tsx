@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SessionContext';
 import {
     LayoutDashboard,
     Upload,
@@ -56,8 +56,8 @@ export function Navbar() {
                                     key={item.name}
                                     href={item.href}
                                     className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${isActive(item.href)
-                                            ? 'bg-violet-500/20 text-violet-400'
-                                            : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-violet-500/20 text-violet-400'
+                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                                         }`}
                                 >
                                     <Icon className="w-4 h-4" />
@@ -123,8 +123,8 @@ export function Navbar() {
                                 key={item.name}
                                 href={item.href}
                                 className={`flex flex-col items-center flex-shrink-0 px-4 py-3 text-xs font-medium transition-all ${isActive(item.href)
-                                        ? 'text-violet-400 border-b-2 border-violet-400'
-                                        : 'text-gray-400'
+                                    ? 'text-violet-400 border-b-2 border-violet-400'
+                                    : 'text-gray-400'
                                     }`}
                             >
                                 <Icon className="w-5 h-5 mb-1" />

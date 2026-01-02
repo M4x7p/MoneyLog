@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/SessionContext';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 import { Card, Button, Input, Select, Spinner, Badge, Modal } from '@/components/ui';
 import {
