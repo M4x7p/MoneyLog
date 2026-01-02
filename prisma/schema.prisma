@@ -1,0 +1,171 @@
+// This is your Prisma schema file for SQLite/Cloudflare D1
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// =========================================
+// User - ผู้ใช้งาน
+// =========================================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  lineUserId   String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  memberships      Membership[]
+  uploadedBatches  ImportBatch[]     @relation("UploadedBy")
+  ownedBatches     ImportBatch[]     @relation("OwnedBy")
+  ownedExpenses    ExpenseTransaction[] @relation("ExpenseOwner")
+}
+
+// =========================================
+// Family - ครอบครัว/กลุ่มผู้ใช้
+// =========================================
+model Family {
+  id              String    @id @default(cuid())
+  name            String
+  inviteCode      String?   @unique
+  inviteExpiresAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  memberships  Membership[]
+  categories   Category[]
+  importBatches ImportBatch[]
+  expenses     ExpenseTransaction[]
+  rules        CategoryRule[]
+}
+
+// =========================================
+// Membership - สมาชิกในครอบครัว
+// =========================================
+model Membership {
+  id       String   @id @default(cuid())
+  userId   String
+  familyId String
+  role     String   @default("MEMBER") // OWNER, MEMBER
+  joinedAt DateTime @default(now())
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, familyId])
+  @@index([userId])
+  @@index([familyId])
+}
+
+// =========================================
+// Category - หมวดหมู่ค่าใช้จ่าย
+// =========================================
+model Category {
+  id        String   @id @default(cuid())
+  familyId  String
+  name      String
+  emoji     String   @default("📦")
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  // Relations
+  family   Family              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  expenses ExpenseTransaction[]
+  rules    CategoryRule[]
+
+  @@unique([familyId, name])
+  @@index([familyId])
+}
+
+// =========================================
+// ImportBatch - ข้อมูลการ import แต่ละครั้ง
+// =========================================
+model ImportBatch {
+  id                   String   @id @default(cuid())
+  familyId             String
+  uploadedByUserId     String
+  ownerUserId          String
+  sourceBank           String   @default("KBank")
+  statementMonth       String   // Format: "YYYY-MM"
+  fileHash             String   // SHA256 of file content
+  totalRowsFound       Int      @default(0)
+  importedCount        Int      @default(0)
+  skippedDuplicateCount Int     @default(0)
+  uncategorizedCount   Int      @default(0)
+  status               String   @default("COMPLETED") // COMPLETED, FAILED
+  importedAt           DateTime @default(now())
+
+  // Relations
+  family     Family              @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  uploadedBy User                @relation("UploadedBy", fields: [uploadedByUserId], references: [id])
+  owner      User                @relation("OwnedBy", fields: [ownerUserId], references: [id])
+  expenses   ExpenseTransaction[]
+
+  @@index([familyId])
+  @@index([familyId, statementMonth])
+  @@index([fileHash])
+}
+
+// =========================================
+// ExpenseTransaction - รายการค่าใช้จ่าย
+// =========================================
+model ExpenseTransaction {
+  id             String   @id @default(cuid())
+  familyId       String
+  importBatchId  String
+  ownerUserId    String
+  dateTime       DateTime
+  amount         Float    // SQLite uses Float instead of Decimal
+  itemType       String   // Type of transaction
+  channel        String   // Payment channel
+  descriptionRaw String   // Original description from bank
+  categoryId     String?
+  fingerprint    String   // Unique hash to detect duplicates
+  createdAt      DateTime @default(now())
+
+  // Relations
+  family      Family      @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  owner       User        @relation("ExpenseOwner", fields: [ownerUserId], references: [id])
+  category    Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([familyId, fingerprint])
+  @@index([familyId])
+  @@index([familyId, dateTime])
+  @@index([familyId, categoryId])
+  @@index([ownerUserId])
+  @@index([importBatchId])
+}
+
+// =========================================
+// CategoryRule - กฎจัดหมวดหมู่อัตโนมัติ
+// =========================================
+model CategoryRule {
+  id         String   @id @default(cuid())
+  familyId   String
+  categoryId String
+  pattern    String   // Text pattern to match
+  matchType  String   @default("CONTAINS") // EXACT, CONTAINS, STARTS_WITH, REGEX
+  channel    String?  // Optional: match specific channel
+  priority   Int      @default(10)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  family   Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([categoryId])
+}
