@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 
         // Calculate total for percentage
         const totalAmount = categoryTotals.reduce(
-            (sum, c) => sum + (c._sum.amount || 0),
+            (sum, c) => sum + Number(c._sum.amount || 0),
             0
         );
 
@@ -93,17 +93,17 @@ export async function GET(request: NextRequest) {
         });
 
         const lastMonthMap = new Map(
-            lastMonthTotals.map(c => [c.categoryId, c._sum.amount || 0])
+            lastMonthTotals.map(c => [c.categoryId, Number(c._sum.amount || 0)])
         );
 
         const topCategories = categoryTotals.map(c => {
             const category = c.categoryId ? categoryMap.get(c.categoryId) : null;
-            const currentAmount = c._sum.amount || 0;
-            const lastMonthAmount = lastMonthMap.get(c.categoryId!) || 0;
+            const currentAmount = Number(c._sum.amount || 0);
+            const lastMonthAmount = Number(lastMonthMap.get(c.categoryId!) || 0);
 
             let change = 0;
             if (lastMonthAmount > 0) {
-                change = ((currentAmount - lastMonthAmount) / lastMonthAmount) * 100;
+                change = ((Number(currentAmount) - Number(lastMonthAmount)) / Number(lastMonthAmount)) * 100;
             }
 
             return {
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
                 categoryEmoji: category?.emoji || '📦',
                 total: c._sum.amount?.toString() || '0',
                 count: c._count,
-                percentage: totalAmount > 0 ? (currentAmount / totalAmount) * 100 : 0,
+                percentage: totalAmount > 0 ? (Number(currentAmount) / Number(totalAmount)) * 100 : 0,
                 changeFromLastMonth: change,
             };
         });
