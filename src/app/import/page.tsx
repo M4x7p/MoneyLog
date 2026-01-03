@@ -74,8 +74,12 @@ export default function ImportPage() {
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0];
         if (selectedFile) {
-            if (selectedFile.type !== 'application/pdf' && !selectedFile.name.endsWith('.pdf')) {
-                setError('กรุณาเลือกไฟล์ PDF เท่านั้น');
+            const fileName = selectedFile.name.toLowerCase();
+            const isPdf = fileName.endsWith('.pdf') || selectedFile.type === 'application/pdf';
+            const isCsv = fileName.endsWith('.csv') || selectedFile.type.includes('csv') || selectedFile.type === 'text/plain';
+
+            if (!isPdf && !isCsv) {
+                setError('กรุณาเลือกไฟล์ PDF หรือ CSV เท่านั้น');
                 return;
             }
             if (selectedFile.size > 10 * 1024 * 1024) {
@@ -207,7 +211,7 @@ export default function ImportPage() {
                 {/* Header */}
                 <div className="mb-8">
                     <h1 className="text-2xl font-bold text-white">นำเข้า Statement</h1>
-                    <p className="text-gray-400">อัปโหลด Statement PDF จาก KBank</p>
+                    <p className="text-gray-400">อัปโหลด Statement PDF หรือ CSV จาก KBank/SCB</p>
                 </div>
 
                 {/* Progress Steps */}
@@ -244,7 +248,7 @@ export default function ImportPage() {
                             <label className="file-label cursor-pointer block">
                                 <input
                                     type="file"
-                                    accept=".pdf,application/pdf"
+                                    accept=".pdf,.csv,application/pdf,text/csv"
                                     onChange={handleFileSelect}
                                 />
                                 <div className="flex flex-col items-center">
@@ -252,10 +256,13 @@ export default function ImportPage() {
                                         <Upload className="w-8 h-8 text-violet-400" />
                                     </div>
                                     <p className="text-white font-medium mb-1">
-                                        {file ? file.name : 'คลิกเพื่อเลือกไฟล์ PDF'}
+                                        {file ? file.name : 'คลิกเพื่อเลือกไฟล์ PDF หรือ CSV'}
                                     </p>
                                     <p className="text-gray-500 text-sm">
-                                        รองรับ Statement รายเดือนจาก K PLUS (PDF ขนาดไม่เกิน 10MB)
+                                        รองรับ Statement จาก KBank/SCB (PDF หรือ CSV ขนาดไม่เกิน 10MB)
+                                    </p>
+                                    <p className="text-emerald-400 text-xs mt-2">
+                                        💡 แนะนำใช้ไฟล์ CSV เพื่อความแม่นยำสูงสุด
                                     </p>
                                 </div>
                             </label>

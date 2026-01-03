@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser, getCurrentFamily } from '@/lib/auth';
 import { parseKBankStatement, validatePdfFile } from '@/lib/parser/kbank-parser';
+import { parseCsvStatement } from '@/lib/parser/csv-parser';
 import { generateFileHash } from '@/lib/utils';
-import { MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from '@/lib/constants';
+import { MAX_FILE_SIZE } from '@/lib/constants';
 
-// POST - Upload and parse a PDF statement (preview mode)
+// Supported file types
+const ALLOWED_EXTENSIONS = ['.pdf', '.csv'];
+const ALLOWED_MIME_TYPES = [
+    'application/pdf',
+    'text/csv',
+    'application/vnd.ms-excel',
+    'text/plain',
+];
+
+// POST - Upload and parse a PDF or CSV statement (preview mode)
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser();
@@ -26,18 +36,25 @@ export async function POST(request: NextRequest) {
         const file = formData.get('file') as File | null;
         const password = formData.get('password') as string | null;
         const ownerId = formData.get('ownerId') as string | null;
+        const bank = (formData.get('bank') as string | null) || 'kbank';
 
         if (!file) {
             return NextResponse.json(
-                { error: 'PDF file is required' },
+                { error: 'File is required' },
                 { status: 400 }
             );
         }
 
+        // Get file extension
+        const fileName = file.name.toLowerCase();
+        const fileExt = fileName.substring(fileName.lastIndexOf('.'));
+        const isCsv = fileExt === '.csv' || file.type.includes('csv') || file.type === 'text/plain';
+        const isPdf = fileExt === '.pdf' || file.type === 'application/pdf';
+
         // Validate file type
-        if (!ALLOWED_MIME_TYPES.includes(file.type) && !file.name.endsWith('.pdf')) {
+        if (!isCsv && !isPdf) {
             return NextResponse.json(
-                { error: 'Only PDF files are allowed' },
+                { error: 'Only PDF and CSV files are allowed' },
                 { status: 400 }
             );
         }
@@ -63,11 +80,11 @@ export async function POST(request: NextRequest) {
         // Get owner info
         const owner = family.memberships.find(m => m.user.id === selectedOwnerId)?.user;
 
-        // Read file into buffer
+        // Read file content
         const arrayBuffer = await file.arrayBuffer();
         const fileBuffer = Buffer.from(arrayBuffer);
 
-        // Generate file hash before parsing
+        // Generate file hash
         const fileHash = generateFileHash(fileBuffer);
 
         // Check for duplicate file upload
@@ -79,31 +96,39 @@ export async function POST(request: NextRequest) {
             orderBy: { importedAt: 'desc' },
         });
 
-        // Quick validation first
-        const validation = await validatePdfFile(fileBuffer);
+        let parseResult;
 
-        if (!validation.valid && !validation.requiresPassword) {
-            return NextResponse.json(
-                {
-                    error: validation.error || 'Invalid PDF file',
-                    step: 'VALIDATION_FAILED',
-                },
-                { status: 400 }
-            );
-        }
+        if (isCsv) {
+            // Parse CSV file
+            const textContent = new TextDecoder('utf-8').decode(fileBuffer);
+            parseResult = await parseCsvStatement(textContent, bank as 'kbank' | 'scb');
+        } else {
+            // Parse PDF file
+            // Quick validation first
+            const validation = await validatePdfFile(fileBuffer);
 
-        if (validation.requiresPassword && !password) {
-            return NextResponse.json({
-                success: false,
-                step: 'PASSWORD_REQUIRED',
-                message: 'This PDF is password-protected. Please enter the password.',
+            if (!validation.valid && !validation.requiresPassword) {
+                return NextResponse.json(
+                    {
+                        error: validation.error || 'Invalid PDF file',
+                        step: 'VALIDATION_FAILED',
+                    },
+                    { status: 400 }
+                );
+            }
+
+            if (validation.requiresPassword && !password) {
+                return NextResponse.json({
+                    success: false,
+                    step: 'PASSWORD_REQUIRED',
+                    message: 'This PDF is password-protected. Please enter the password.',
+                });
+            }
+
+            parseResult = await parseKBankStatement(fileBuffer, {
+                password: password || undefined,
             });
         }
-
-        // Parse the statement
-        const parseResult = await parseKBankStatement(fileBuffer, {
-            password: password || undefined,
-        });
 
         if (!parseResult.success) {
             // Check specific error types
@@ -120,7 +145,7 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({
                     success: false,
                     step: 'PASSWORD_NOT_SUPPORTED',
-                    message: 'ขออภัย ระบบยังไม่รองรับ PDF ที่มีรหัสผ่าน กรุณาปลดล็อก PDF ก่อนอัปโหลด หรือใช้ PDF ที่ไม่มีรหัสผ่าน',
+                    message: 'ขออภัย ระบบยังไม่รองรับ PDF ที่มีรหัสผ่าน กรุณาใช้ไฟล์ CSV แทน หรือปลดล็อก PDF ก่อนอัปโหลด',
                 }, { status: 400 });
             }
 
@@ -136,6 +161,17 @@ export async function POST(request: NextRequest) {
                 {
                     error: parseResult.error || 'Failed to parse statement',
                     step: 'PARSE_FAILED',
+                },
+                { status: 400 }
+            );
+        }
+
+        // Check if we got any transactions
+        if (parseResult.transactions.length === 0) {
+            return NextResponse.json(
+                {
+                    error: 'ไม่พบรายการใดในไฟล์ กรุณาตรวจสอบว่าไฟล์ถูกต้องและมีรายการรายจ่าย',
+                    step: 'NO_TRANSACTIONS',
                 },
                 { status: 400 }
             );
@@ -170,6 +206,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             success: true,
             step: 'PREVIEW',
+            fileType: isCsv ? 'csv' : 'pdf',
             fileHash,
             statementMonth: parseResult.statementMonth,
             accountNumber: parseResult.accountNumber,
@@ -188,8 +225,7 @@ export async function POST(request: NextRequest) {
                 importedAt: existingBatch.importedAt,
                 statementMonth: existingBatch.statementMonth,
             } : null,
-            // Store parsed data temporarily in session/memory 
-            // In production, use Redis or similar for this
+            // Store parsed data temporarily
             _parsedData: {
                 transactions: parseResult.transactions.map(t => ({
                     ...t,
@@ -206,7 +242,6 @@ export async function POST(request: NextRequest) {
             {
                 error: 'Failed to process file',
                 details: error?.message || 'Unknown error',
-                stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
             },
             { status: 500 }
         );
