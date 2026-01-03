@@ -2,8 +2,8 @@
 import { INFLOW_PATTERNS } from '@/lib/constants';
 import { parseThaiDate, generateTransactionFingerprint } from '@/lib/utils';
 
-// pdf-parse v2 uses named exports, require works better for server-side
-const pdfParse = require('pdf-parse/node');
+// pdf-parse uses default export
+const pdfParse = require('pdf-parse');
 
 export interface ParsedTransaction {
     dateTime: Date;
@@ -45,7 +45,7 @@ export async function parseKBankStatement(
 
         let data: { text: string; numpages: number; info: unknown };
         try {
-            data = await pdfParse.pdf(fileBuffer, pdfOptions);
+            data = await pdfParse(fileBuffer, pdfOptions);
         } catch (pdfError) {
             const errorMessage = (pdfError as Error).message || '';
 
@@ -460,7 +460,7 @@ export async function validatePdfFile(fileBuffer: Buffer): Promise<{
     error?: string;
 }> {
     try {
-        const data = await pdfParse.pdf(fileBuffer, {});
+        const data = await pdfParse(fileBuffer, {});
 
         if (!data.text || data.text.trim().length < 50) {
             return {
