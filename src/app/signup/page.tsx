@@ -14,7 +14,7 @@ export default function SignupPage() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const { signup } = useAuth();
+    const { signup, refreshUser, refreshFamily } = useAuth();
     const router = useRouter();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -36,6 +36,9 @@ export default function SignupPage() {
         const result = await signup(email, password, name);
 
         if (result.success) {
+            // Wait for cookie to be set, then refresh user session
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await refreshUser();
             router.push('/family/create');
         } else {
             setError(result.error || 'Signup failed');

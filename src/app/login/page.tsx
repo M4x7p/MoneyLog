@@ -12,7 +12,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const { login } = useAuth();
+    const { login, refreshUser, refreshFamily } = useAuth();
     const router = useRouter();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -23,6 +23,10 @@ export default function LoginPage() {
         const result = await login(email, password);
 
         if (result.success) {
+            // Wait for cookie to be set, then refresh user session
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await refreshUser();
+            await refreshFamily();
             router.push('/dashboard');
         } else {
             setError(result.error || 'Login failed');
