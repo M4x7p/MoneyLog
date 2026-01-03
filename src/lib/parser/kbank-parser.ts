@@ -2,8 +2,8 @@
 import { INFLOW_PATTERNS } from '@/lib/constants';
 import { parseThaiDate, generateTransactionFingerprint } from '@/lib/utils';
 
-// pdf-parse uses default export
-const pdfParse = require('pdf-parse');
+// Use pdfjs-dist for serverless compatibility
+import * as pdfjsLib from 'pdfjs-dist';
 
 export interface ParsedTransaction {
     dateTime: Date;
@@ -29,6 +29,32 @@ export interface ParseOptions {
 }
 
 /**
+ * Extract text from PDF using pdfjs-dist
+ */
+async function extractPdfText(fileBuffer: Buffer, password?: string): Promise<string> {
+    const data = new Uint8Array(fileBuffer);
+
+    const loadingTask = pdfjsLib.getDocument({
+        data,
+        password: password || undefined,
+    });
+
+    const pdfDoc = await loadingTask.promise;
+    let fullText = '';
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ');
+        fullText += pageText + '\n';
+    }
+
+    return fullText;
+}
+
+/**
  * Parse KBank monthly statement PDF
  * Extracts expense (outflow) transactions only
  */
@@ -37,20 +63,15 @@ export async function parseKBankStatement(
     options: ParseOptions = {}
 ): Promise<ParseResult> {
     try {
-        // Attempt to parse PDF with optional password
-        const pdfOptions: { password?: string } = {};
-        if (options.password) {
-            pdfOptions.password = options.password;
-        }
+        let text: string;
 
-        let data: { text: string; numpages: number; info: unknown };
         try {
-            data = await pdfParse(fileBuffer, pdfOptions);
+            text = await extractPdfText(fileBuffer, options.password);
         } catch (pdfError) {
             const errorMessage = (pdfError as Error).message || '';
 
             // Check if password is required
-            if (errorMessage.includes('password') || errorMessage.includes('encrypted')) {
+            if (errorMessage.includes('password') || errorMessage.includes('encrypted') || errorMessage.includes('PasswordException')) {
                 return {
                     success: false,
                     transactions: [],
@@ -62,7 +83,7 @@ export async function parseKBankStatement(
             }
 
             // Check if it's a scan/image-based PDF
-            if (errorMessage.includes('stream') || data! && !data.text) {
+            if (errorMessage.includes('stream')) {
                 return {
                     success: false,
                     transactions: [],
@@ -76,49 +97,36 @@ export async function parseKBankStatement(
             throw pdfError;
         }
 
-        const text = data.text;
-
-        // Check if we got any meaningful text
-        if (!text || text.trim().length < 100) {
+        // Check if we got any text
+        if (!text || text.trim().length < 50) {
             return {
                 success: false,
                 transactions: [],
                 statementMonth: null,
-                error: 'Could not extract text from PDF. This may be a scanned/image-based document.',
+                error: 'Could not extract text from PDF. Make sure it\'s a text-based statement from K PLUS.',
                 rawRowCount: 0,
                 filteredOutCount: 0,
             };
         }
 
-        // Parse the statement
-        const transactions = parseStatementText(text);
+        // Extract statement month from the text
+        const statementMonth = extractStatementMonth(text);
 
-        if (transactions.length === 0) {
-            return {
-                success: false,
-                transactions: [],
-                statementMonth: null,
-                error: 'No expense transactions found in this statement. Please ensure this is a KBank monthly statement.',
-                rawRowCount: 0,
-                filteredOutCount: 0,
-            };
-        }
-
-        // Detect statement month from transactions
-        const dates = transactions.map(t => t.dateTime);
-        const statementMonth = detectStatementMonthFromDates(dates);
-
-        // Try to extract account number
+        // Extract account number
         const accountNumber = extractAccountNumber(text);
+
+        // Parse transactions from text
+        const { transactions, rawRowCount, filteredOutCount } = parseTransactions(text);
 
         return {
             success: true,
             transactions,
             statementMonth,
             accountNumber,
-            rawRowCount: transactions.length,
-            filteredOutCount: 0, // Will be updated by caller if filtering applied
+            rawRowCount,
+            filteredOutCount,
         };
+
     } catch (error) {
         console.error('PDF parsing error:', error);
         return {
@@ -133,292 +141,83 @@ export async function parseKBankStatement(
 }
 
 /**
- * Parse statement text into transactions
- * This handles the typical KBank statement format
+ * Extract statement month from KBank statement text
+ * Looks for patterns like "เดือน ธันวาคม 2567" or "December 2024"
  */
-function parseStatementText(text: string): ParsedTransaction[] {
-    const transactions: ParsedTransaction[] = [];
-    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
-    // KBank statement patterns
-    // Date pattern: DD/MM/YYYY or DD-MM-YYYY
-    const datePattern = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/;
-    // Time pattern: HH:MM or HH:MM:SS
-    const timePattern = /(\d{1,2}:\d{2}(?::\d{2})?)/;
-    // Amount pattern: numbers with commas and decimals (negative or debit)
-    const amountPattern = /([\d,]+\.\d{2})/g;
-
-    let currentDate: string | null = null;
-    let currentTime: string | null = null;
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // Skip header rows and balance rows
-        if (isHeaderOrBalanceRow(line)) {
-            continue;
-        }
-
-        // Check if this is an inflow (income) row - skip these
-        if (isInflowRow(line)) {
-            continue;
-        }
-
-        // Try to extract date from line
-        const dateMatch = line.match(datePattern);
-        if (dateMatch) {
-            currentDate = dateMatch[1];
-        }
-
-        // Try to extract time from line
-        const timeMatch = line.match(timePattern);
-        if (timeMatch) {
-            currentTime = timeMatch[1];
-        }
-
-        // Try to parse as a transaction row
-        const transaction = parseTransactionLine(line, currentDate, currentTime);
-        if (transaction) {
-            // Verify it's an expense (outflow)
-            if (isExpenseTransaction(line, transaction)) {
-                transactions.push(transaction);
-            }
-        }
-    }
-
-    return transactions;
-}
-
-/**
- * Parse a single transaction line
- */
-function parseTransactionLine(
-    line: string,
-    currentDate: string | null,
-    currentTime: string | null
-): ParsedTransaction | null {
-    // Date pattern within the line
-    const datePattern = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/;
-    const timePattern = /(\d{1,2}:\d{2}(?::\d{2})?)/;
-    const amountPattern = /([\d,]+\.\d{2})/g;
-
-    // Extract date from line or use current
-    const dateMatch = line.match(datePattern);
-    const lineDate = dateMatch ? dateMatch[1] : currentDate;
-
-    if (!lineDate) {
-        return null;
-    }
-
-    // Extract time
-    const timeMatch = line.match(timePattern);
-    const lineTime = timeMatch ? timeMatch[1] : currentTime;
-
-    // Extract all amounts from line
-    const amounts: number[] = [];
-    let amountMatch;
-    while ((amountMatch = amountPattern.exec(line)) !== null) {
-        const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
-        if (amount > 0) {
-            amounts.push(amount);
-        }
-    }
-
-    // Need at least one amount for expenses
-    if (amounts.length === 0) {
-        return null;
-    }
-
-    // For KBank, outflow is typically the first significant amount
-    // Balance is usually the last amount
-    let expenseAmount = amounts[0];
-
-    // If we have multiple amounts, try to identify the expense vs balance
-    if (amounts.length >= 2) {
-        // The expense amount is typically smaller than balance
-        // or we look for specific patterns
-        expenseAmount = amounts[0];
-    }
-
-    // Skip very small amounts (likely fees shown separately)
-    if (expenseAmount < 1) {
-        return null;
-    }
-
-    // Parse date/time
-    let dateTime: Date;
-    try {
-        dateTime = parseThaiDate(lineDate, lineTime || undefined);
-    } catch {
-        return null;
-    }
-
-    // Extract channel and item type
-    const { channel, itemType } = extractChannelAndType(line);
-
-    // Clean description
-    const description = cleanDescription(line);
-
-    // Generate fingerprint
-    const fingerprint = generateTransactionFingerprint(
-        dateTime,
-        expenseAmount,
-        channel,
-        description
-    );
-
-    return {
-        dateTime,
-        amount: expenseAmount,
-        itemType,
-        channel,
-        descriptionRaw: description,
-        fingerprint,
+function extractStatementMonth(text: string): string | null {
+    // Thai month patterns
+    const thaiMonths: Record<string, string> = {
+        'มกราคม': '01', 'กุมภาพันธ์': '02', 'มีนาคม': '03',
+        'เมษายน': '04', 'พฤษภาคม': '05', 'มิถุนายน': '06',
+        'กรกฎาคม': '07', 'สิงหาคม': '08', 'กันยายน': '09',
+        'ตุลาคม': '10', 'พฤศจิกายน': '11', 'ธันวาคม': '12',
     };
+
+    // English month patterns
+    const engMonths: Record<string, string> = {
+        'january': '01', 'february': '02', 'march': '03',
+        'april': '04', 'may': '05', 'june': '06',
+        'july': '07', 'august': '08', 'september': '09',
+        'october': '10', 'november': '11', 'december': '12',
+        'jan': '01', 'feb': '02', 'mar': '03',
+        'apr': '04', 'jun': '06', 'jul': '07',
+        'aug': '08', 'sep': '09', 'oct': '10',
+        'nov': '11', 'dec': '12',
+    };
+
+    // Try Thai pattern first: เดือน ธันวาคม 2567
+    for (const [thaiMonth, monthNum] of Object.entries(thaiMonths)) {
+        const regex = new RegExp(`${thaiMonth}\\s*(\\d{4})`, 'i');
+        const match = text.match(regex);
+        if (match) {
+            let year = parseInt(match[1]);
+            // Convert Buddhist year to Gregorian if > 2500
+            if (year > 2500) {
+                year = year - 543;
+            }
+            return `${year}-${monthNum}`;
+        }
+    }
+
+    // Try English pattern: December 2024
+    for (const [engMonth, monthNum] of Object.entries(engMonths)) {
+        const regex = new RegExp(`${engMonth}\\s*(\\d{4})`, 'i');
+        const match = text.match(regex);
+        if (match) {
+            const year = parseInt(match[1]);
+            return `${year}-${monthNum}`;
+        }
+    }
+
+    // Try pattern with date range: 01/12/2567 - 31/12/2567
+    const dateRangeMatch = text.match(/(\d{2})\/(\d{2})\/(\d{4})\s*[-–]\s*\d{2}\/\d{2}\/\d{4}/);
+    if (dateRangeMatch) {
+        let year = parseInt(dateRangeMatch[3]);
+        if (year > 2500) {
+            year = year - 543;
+        }
+        return `${year}-${dateRangeMatch[2]}`;
+    }
+
+    return null;
 }
 
 /**
- * Extract channel and transaction type from line
- */
-function extractChannelAndType(line: string): { channel: string; itemType: string } {
-    const upperLine = line.toUpperCase();
-
-    // Channel detection
-    let channel = 'Other';
-    if (upperLine.includes('K PLUS') || upperLine.includes('KPLUS')) {
-        channel = 'K PLUS';
-    } else if (upperLine.includes('EDC') || upperLine.includes('K SHOP')) {
-        channel = 'EDC/K SHOP';
-    } else if (upperLine.includes('DIRECT DEBIT')) {
-        channel = 'Online Direct Debit';
-    } else if (upperLine.includes('INTERNET') || upperLine.includes('MOBILE')) {
-        channel = 'Internet/Mobile';
-    } else if (upperLine.includes('ATM')) {
-        channel = 'ATM';
-    } else if (upperLine.includes('COUNTER') || upperLine.includes('BRANCH')) {
-        channel = 'Counter';
-    } else if (upperLine.includes('AUTO') && upperLine.includes('DEBIT')) {
-        channel = 'Auto Debit';
-    }
-
-    // Item type detection (Thai terms)
-    let itemType = 'Other';
-    if (line.includes('โอนเงิน') || line.includes('โอน')) {
-        itemType = 'โอนเงิน';
-    } else if (line.includes('ชำระเงิน') || line.includes('ชำระ')) {
-        itemType = 'ชำระเงิน';
-    } else if (line.includes('หักบัญชี')) {
-        itemType = 'หักบัญชี';
-    } else if (line.includes('ถอนเงิน') || line.includes('ถอน')) {
-        itemType = 'ถอนเงิน';
-    } else if (line.includes('ซื้อสินค้า') || line.includes('ซื้อ')) {
-        itemType = 'ซื้อสินค้า';
-    } else if (line.includes('จ่ายบิล') || line.includes('จ่าย')) {
-        itemType = 'จ่ายบิล';
-    }
-
-    return { channel, itemType };
-}
-
-/**
- * Clean and extract description from line
- */
-function cleanDescription(line: string): string {
-    // Remove dates, times, and amounts
-    let description = line
-        .replace(/\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/g, '')
-        .replace(/\d{1,2}:\d{2}(:\d{2})?/g, '')
-        .replace(/[\d,]+\.\d{2}/g, '')
-        .trim();
-
-    // Remove multiple spaces
-    description = description.replace(/\s+/g, ' ').trim();
-
-    // Limit length
-    if (description.length > 500) {
-        description = description.substring(0, 500);
-    }
-
-    return description || 'No description';
-}
-
-/**
- * Check if row should be skipped (headers, balance rows)
- */
-function isHeaderOrBalanceRow(line: string): boolean {
-    const skipPatterns = [
-        'ยอดยกมา',
-        'ยอดยกไป',
-        'Statement',
-        'Page',
-        'รายการเดินบัญชี',
-        'Account Statement',
-        'เลขที่บัญชี',
-        'Account No',
-        'ชื่อบัญชี',
-        'Account Name',
-        'สาขา',
-        'Branch',
-        'วันที่',
-        'Date',
-        'รายการ',
-        'Description',
-        'จำนวนเงิน',
-        'Amount',
-        'คงเหลือ',
-        'Balance',
-    ];
-
-    return skipPatterns.some(pattern =>
-        line.includes(pattern) && line.length < 100
-    );
-}
-
-/**
- * Check if row is an inflow (income) - should be skipped
- */
-function isInflowRow(line: string): boolean {
-    return INFLOW_PATTERNS.some(pattern =>
-        line.includes(pattern.toUpperCase()) || line.includes(pattern)
-    );
-}
-
-/**
- * Determine if a parsed transaction is an expense
- */
-function isExpenseTransaction(line: string, transaction: ParsedTransaction): boolean {
-    // Check for explicit inflow indicators
-    if (line.includes('รับ') && !line.includes('รับชำระ')) {
-        return false;
-    }
-    if (line.includes('ฝาก') && !line.includes('ฝากประจำ')) {
-        return false;
-    }
-    if (line.includes('คืนเงิน') || line.includes('REFUND')) {
-        return false;
-    }
-    if (line.includes('ดอกเบี้ย')) {
-        return false;
-    }
-
-    // Amount should be positive for expenses
-    return transaction.amount > 0;
-}
-
-/**
- * Extract account number from statement text
+ * Extract account number from KBank statement
  */
 function extractAccountNumber(text: string): string | undefined {
-    // KBank account number patterns
+    // Pattern: xxx-x-xxxxx-x
     const patterns = [
-        /(?:เลขที่บัญชี|Account No\.?|Account Number)[:\s]*(\d[\d\-\s]+\d)/i,
-        /(\d{3}[\-\s]?\d[\-\s]?\d{5}[\-\s]?\d)/,
+        /บัญชี[:\s]*(\d{3}[-\s]?\d[-\s]?\d{5}[-\s]?\d)/i,
+        /Account[:\s#]*(\d{3}[-\s]?\d[-\s]?\d{5}[-\s]?\d)/i,
+        /A\/C[:\s#]*(\d{3}[-\s]?\d[-\s]?\d{5}[-\s]?\d)/i,
+        /(\d{3}-\d-\d{5}-\d)/,
     ];
 
     for (const pattern of patterns) {
         const match = text.match(pattern);
         if (match) {
-            return match[1].replace(/[\s\-]/g, '');
+            return match[1].replace(/\s/g, '');
         }
     }
 
@@ -426,29 +225,173 @@ function extractAccountNumber(text: string): string | undefined {
 }
 
 /**
- * Detect statement month from transaction dates
+ * Parse transaction rows from text
  */
-function detectStatementMonthFromDates(dates: Date[]): string | null {
-    if (dates.length === 0) return null;
+function parseTransactions(text: string): {
+    transactions: ParsedTransaction[];
+    rawRowCount: number;
+    filteredOutCount: number;
+} {
+    const transactions: ParsedTransaction[] = [];
+    let rawRowCount = 0;
+    let filteredOutCount = 0;
 
-    // Count occurrences of each month
-    const monthCounts: Record<string, number> = {};
-    dates.forEach(date => {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        monthCounts[month] = (monthCounts[month] || 0) + 1;
-    });
+    // Split into lines and process
+    const lines = text.split(/\n|\r\n?/);
 
-    // Find month with most transactions
-    let maxMonth = '';
-    let maxCount = 0;
-    Object.entries(monthCounts).forEach(([month, count]) => {
-        if (count > maxCount) {
-            maxCount = count;
-            maxMonth = month;
+    // Pattern for transaction lines
+    // Format: DD/MM/YYYY HH:MM amount type channel description
+    // or similar variations
+    const transactionPattern = /(\d{2}\/\d{2}\/\d{2,4})\s+(\d{2}:\d{2})\s+([\d,]+\.?\d*)\s+(.+)/;
+
+    // Alternative pattern for grouped data
+    const altPattern = /(\d{2}\/\d{2}\/\d{2,4})\s+(\d{2}:\d{2})\s+([\d,]+\.?\d*)/;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Try main pattern
+        const match = line.match(transactionPattern);
+        if (match) {
+            rawRowCount++;
+
+            const dateStr = match[1];
+            const timeStr = match[2];
+            const amountStr = match[3];
+            const rest = match[4];
+
+            // Parse amount
+            const amount = parseFloat(amountStr.replace(/,/g, ''));
+            if (isNaN(amount)) continue;
+
+            // Check if this is inflow (income) - skip these
+            const isInflow = INFLOW_PATTERNS.some(pattern =>
+                rest.toLowerCase().includes(pattern.toLowerCase())
+            );
+
+            if (isInflow) {
+                filteredOutCount++;
+                continue;
+            }
+
+            // Parse date
+            const dateTime = parseTransactionDate(dateStr, timeStr);
+            if (!dateTime) continue;
+
+            // Extract item type and channel from rest
+            const { itemType, channel, description } = parseTransactionDetails(rest);
+
+            // Generate fingerprint
+            const fingerprint = generateTransactionFingerprint(
+                dateTime,
+                amount,
+                channel,
+                description
+            );
+
+            transactions.push({
+                dateTime,
+                amount,
+                itemType,
+                channel,
+                descriptionRaw: description,
+                fingerprint,
+            });
         }
-    });
+    }
 
-    return maxMonth || null;
+    // Sort by date
+    transactions.sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime());
+
+    return { transactions, rawRowCount, filteredOutCount };
+}
+
+/**
+ * Parse transaction date from DD/MM/YYYY HH:MM format
+ */
+function parseTransactionDate(dateStr: string, timeStr: string): Date | null {
+    try {
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) return null;
+
+        let day = parseInt(parts[0]);
+        let month = parseInt(parts[1]);
+        let year = parseInt(parts[2]);
+
+        // Handle 2-digit year
+        if (year < 100) {
+            year = year > 50 ? 1900 + year : 2000 + year;
+        }
+        // Handle Buddhist year
+        if (year > 2500) {
+            year = year - 543;
+        }
+
+        const timeParts = timeStr.split(':');
+        const hour = parseInt(timeParts[0]);
+        const minute = parseInt(timeParts[1]);
+
+        return new Date(year, month - 1, day, hour, minute);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Parse transaction details to extract item type, channel, and description
+ */
+function parseTransactionDetails(text: string): {
+    itemType: string;
+    channel: string;
+    description: string;
+} {
+    // Common channel patterns
+    const channels = [
+        { pattern: /K\s*PLUS|K\+|KPLUS/i, name: 'K PLUS' },
+        { pattern: /K-App/i, name: 'K-App' },
+        { pattern: /ATM/i, name: 'ATM' },
+        { pattern: /EDC|เครื่องรูด/i, name: 'EDC' },
+        { pattern: /Internet|Online/i, name: 'Internet Banking' },
+        { pattern: /Counter|เคาน์เตอร์/i, name: 'Counter' },
+        { pattern: /Mobile/i, name: 'Mobile Banking' },
+    ];
+
+    // Common item type patterns
+    const itemTypes = [
+        { pattern: /โอน|Transfer/i, name: 'โอนเงิน' },
+        { pattern: /ชำระ|Payment|Pay/i, name: 'ชำระเงิน' },
+        { pattern: /ถอน|Withdraw/i, name: 'ถอนเงิน' },
+        { pattern: /ซื้อ|Purchase/i, name: 'ซื้อสินค้า' },
+        { pattern: /จ่าย/i, name: 'จ่ายเงิน' },
+        { pattern: /QR/i, name: 'QR Payment' },
+        { pattern: /PromptPay|พร้อมเพย์/i, name: 'PromptPay' },
+    ];
+
+    let channel = 'Other';
+    let itemType = 'รายจ่าย';
+
+    // Find channel
+    for (const ch of channels) {
+        if (ch.pattern.test(text)) {
+            channel = ch.name;
+            break;
+        }
+    }
+
+    // Find item type
+    for (const it of itemTypes) {
+        if (it.pattern.test(text)) {
+            itemType = it.name;
+            break;
+        }
+    }
+
+    return {
+        itemType,
+        channel,
+        description: text.substring(0, 200).trim(), // Limit description length
+    };
 }
 
 /**
@@ -460,9 +403,9 @@ export async function validatePdfFile(fileBuffer: Buffer): Promise<{
     error?: string;
 }> {
     try {
-        const data = await pdfParse(fileBuffer, {});
+        const text = await extractPdfText(fileBuffer);
 
-        if (!data.text || data.text.trim().length < 50) {
+        if (!text || text.trim().length < 50) {
             return {
                 valid: false,
                 requiresPassword: false,
@@ -471,24 +414,25 @@ export async function validatePdfFile(fileBuffer: Buffer): Promise<{
         }
 
         // Check if it looks like a KBank statement
-        const isKBank = data.text.includes('KBank') ||
-            data.text.includes('กสิกร') ||
-            data.text.includes('KASIKORN') ||
-            data.text.includes('K PLUS');
+        const isKBank = text.includes('KBank') ||
+            text.includes('กสิกร') ||
+            text.includes('KASIKORN') ||
+            text.includes('K PLUS');
 
         if (!isKBank) {
             return {
-                valid: true,
+                valid: false,
                 requiresPassword: false,
-                error: 'Warning: This may not be a KBank statement. Parsing might not work correctly.',
+                error: 'This doesn\'t appear to be a KBank statement. Currently only KBank statements are supported.',
             };
         }
 
         return { valid: true, requiresPassword: false };
-    } catch (error) {
-        const message = (error as Error).message || '';
 
-        if (message.includes('password') || message.includes('encrypted')) {
+    } catch (error) {
+        const errorMessage = (error as Error).message || '';
+
+        if (errorMessage.includes('password') || errorMessage.includes('encrypted') || errorMessage.includes('PasswordException')) {
             return {
                 valid: true,
                 requiresPassword: true,
@@ -498,7 +442,7 @@ export async function validatePdfFile(fileBuffer: Buffer): Promise<{
         return {
             valid: false,
             requiresPassword: false,
-            error: `Invalid PDF: ${message}`,
+            error: `Could not validate PDF: ${errorMessage}`,
         };
     }
 }
