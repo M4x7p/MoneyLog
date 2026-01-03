@@ -1,4 +1,4 @@
-// This is your Prisma schema file for PostgreSQL (Vercel/Neon)
+// This is your Prisma schema file for PostgreSQL
 // Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
