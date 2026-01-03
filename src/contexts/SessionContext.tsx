@@ -77,12 +77,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
             const res = await fetch('/api/family');
             const data = await res.json() as any;
-            if (data.hasFamily) {
+            console.log('[SessionContext] refreshFamily response:', data);
+            if (data.hasFamily && data.family) {
                 setFamily(data.family);
+                console.log('[SessionContext] Family set:', data.family);
             } else {
                 setFamily(null);
+                console.log('[SessionContext] No family found');
             }
-        } catch {
+        } catch (e) {
+            console.error('[SessionContext] refreshFamily error:', e);
             setFamily(null);
         }
     }, []);
