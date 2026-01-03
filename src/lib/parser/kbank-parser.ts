@@ -2,8 +2,14 @@
 import { INFLOW_PATTERNS } from '@/lib/constants';
 import { parseThaiDate, generateTransactionFingerprint } from '@/lib/utils';
 
-// Use pdfjs-dist for serverless compatibility
-import * as pdfjsLib from 'pdfjs-dist';
+// Use pdfjs-dist legacy build for serverless compatibility (no worker needed)
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+// Disable worker to work in serverless environment
+if (typeof window === 'undefined') {
+    // @ts-ignore - Server-side only
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+}
 
 export interface ParsedTransaction {
     dateTime: Date;
@@ -37,6 +43,9 @@ async function extractPdfText(fileBuffer: Buffer, password?: string): Promise<st
     const loadingTask = pdfjsLib.getDocument({
         data,
         password: password || undefined,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
     });
 
     const pdfDoc = await loadingTask.promise;
