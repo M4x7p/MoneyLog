@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-export const runtime = 'edge';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser, getCurrentFamily } from '@/lib/auth';
 import { parseKBankStatement, validatePdfFile } from '@/lib/parser/kbank-parser';

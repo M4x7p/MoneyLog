@@ -1,4 +1,4 @@
-// This is your Prisma schema file for SQLite/Cloudflare D1
+// This is your Prisma schema file for PostgreSQL (Vercel/Neon)
 // Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -6,7 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // =========================================
@@ -125,7 +127,7 @@ model ExpenseTransaction {
   importBatchId  String
   ownerUserId    String
   dateTime       DateTime
-  amount         Float    // SQLite uses Float instead of Decimal
+  amount         Decimal  @db.Decimal(12, 2)
   itemType       String   // Type of transaction
   channel        String   // Payment channel
   descriptionRaw String   // Original description from bank
