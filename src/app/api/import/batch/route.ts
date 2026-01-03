@@ -191,10 +191,14 @@ export async function POST(request: NextRequest) {
             },
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Import parse error:', error);
         return NextResponse.json(
-            { error: 'Failed to process file' },
+            {
+                error: 'Failed to process file',
+                details: error?.message || 'Unknown error',
+                stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+            },
             { status: 500 }
         );
     }
