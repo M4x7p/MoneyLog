@@ -32,7 +32,10 @@ export interface ParseOptions {
  * Extract text from PDF using unpdf
  */
 async function extractPdfText(fileBuffer: Buffer, password?: string): Promise<string> {
-    const { text } = await extractText(fileBuffer, {
+    // Convert Buffer to Uint8Array as required by unpdf
+    const uint8Array = new Uint8Array(fileBuffer);
+
+    const { text } = await extractText(uint8Array, {
         mergePages: true,
     });
     return text;
