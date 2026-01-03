@@ -34,21 +34,24 @@ export async function GET() {
         });
 
         if (!membership) {
-            return NextResponse.json({ family: null });
+            return NextResponse.json({ hasFamily: false, family: null });
         }
 
         return NextResponse.json({
+            hasFamily: true,
             family: {
                 id: membership.family.id,
                 name: membership.family.name,
-                members: membership.family.memberships.map(m => ({
+                role: membership.role,
+                members: membership.family.memberships.map((m: any) => ({
                     userId: m.user.id,
                     name: m.user.name,
                     email: m.user.email,
                     role: m.role,
                     joinedAt: m.joinedAt,
                 })),
-                currentUserRole: membership.role,
+                memberCount: membership.family.memberships.length,
+                categories: [],
             },
         });
     } catch (error) {
