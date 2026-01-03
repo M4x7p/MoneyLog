@@ -45,10 +45,9 @@ export async function POST(request: NextRequest) {
 
         // Create session token
         const token = createToken({ userId: user.id, email: user.email });
-        await setSessionCookie(token);
 
-        // Return user data (excluding password)
-        return NextResponse.json({
+        // Create response with user data
+        const response = NextResponse.json({
             success: true,
             user: {
                 id: user.id,
@@ -65,6 +64,17 @@ export async function POST(request: NextRequest) {
                 })),
             },
         });
+
+        // Set cookie on response
+        response.cookies.set('moneylog-session', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 7, // 7 days
+            path: '/',
+        });
+
+        return response;
     } catch (error: any) {
         console.error('Login error:', error);
         return NextResponse.json(
