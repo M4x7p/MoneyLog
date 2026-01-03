@@ -115,6 +115,15 @@ export async function POST(request: NextRequest) {
                 });
             }
 
+            // PDF is password protected but we can't decrypt it
+            if (parseResult.error === 'PDF_PASSWORD_PROTECTED') {
+                return NextResponse.json({
+                    success: false,
+                    step: 'PASSWORD_NOT_SUPPORTED',
+                    message: 'ขออภัย ระบบยังไม่รองรับ PDF ที่มีรหัสผ่าน กรุณาปลดล็อก PDF ก่อนอัปโหลด หรือใช้ PDF ที่ไม่มีรหัสผ่าน',
+                }, { status: 400 });
+            }
+
             if (parseResult.error?.includes('password')) {
                 return NextResponse.json({
                     success: false,

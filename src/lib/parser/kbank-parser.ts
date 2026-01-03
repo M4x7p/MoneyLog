@@ -57,13 +57,14 @@ export async function parseKBankStatement(
         } catch (pdfError) {
             const errorMessage = (pdfError as Error).message || '';
 
-            // Check if password is required
-            if (errorMessage.includes('password') || errorMessage.includes('encrypted') || errorMessage.includes('PasswordException')) {
+            // Check if password is required or PDF is encrypted
+            if (errorMessage.includes('password') || errorMessage.includes('encrypted') ||
+                errorMessage.includes('PasswordException') || errorMessage.includes('decrypt')) {
                 return {
                     success: false,
                     transactions: [],
                     statementMonth: null,
-                    error: 'PASSWORD_REQUIRED',
+                    error: 'PDF_PASSWORD_PROTECTED',
                     rawRowCount: 0,
                     filteredOutCount: 0,
                 };

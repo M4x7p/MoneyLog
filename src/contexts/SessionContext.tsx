@@ -93,17 +93,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const init = async () => {
-            await refreshUser();
+            try {
+                // First check if user is authenticated
+                const res = await fetch('/api/auth/me');
+                const data = await res.json() as any;
+                if (data.authenticated) {
+                    setUser(data.user);
+                    // Also load family data before setting isLoading to false
+                    try {
+                        const familyRes = await fetch('/api/family');
+                        const familyData = await familyRes.json() as any;
+                        console.log('[SessionContext] Initial family load:', familyData);
+                        if (familyData.hasFamily && familyData.family) {
+                            setFamily(familyData.family);
+                        }
+                    } catch (e) {
+                        console.error('[SessionContext] Initial family load error:', e);
+                    }
+                } else {
+                    setUser(null);
+                    setFamily(null);
+                }
+            } catch {
+                setUser(null);
+                setFamily(null);
+            }
             setIsLoading(false);
         };
         init();
-    }, [refreshUser]);
+    }, []);
 
+    // Re-fetch family when user changes (e.g., after login)
     useEffect(() => {
-        if (user) {
+        if (user && !family) {
             refreshFamily();
         }
-    }, [user, refreshFamily]);
+    }, [user, family, refreshFamily]);
 
     const login = async (email: string, password: string) => {
         try {
